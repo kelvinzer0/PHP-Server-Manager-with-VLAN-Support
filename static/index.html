@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHP Server Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1, h2 {
+            margin-bottom: 10px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .server-list {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .server-item {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .server-item:last-child {
+            border-bottom: none;
+        }
+        .server-status {
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        .status-running {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-stopped {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 5px;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: black;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            box-sizing: border-box;
+        }
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .alert {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 3px;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .alert-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PHP Server Manager</h1>
+        <p>Manage your PHP development servers</p>
+        
+        <button id="add-server-btn" class="btn-primary">Add Server</button>
+        
+        <div id="alert" class="alert hidden"></div>
+        
+        <h2>Your Servers:</h2>
+        <div id="server-list" class="server-list">
+            <div id="loading">Loading servers...</div>
+        </div>
+    </div>
+    
+    <!-- Server Modal -->
+    <div id="server-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modal-title">Server Configuration</h2>
+            <form id="server-form">
+                <input type="hidden" id="server-id">
+                <div class="form-group">
+                    <label for="server-name">Server Name:</label>
+                    <input type="text" id="server-name" placeholder="My PHP Server" required>
+                </div>
+                <div class="form-group">
+                    <label for="server-port">Port:</label>
+                    <input type="text" id="server-port" placeholder="8000" required pattern="[0-9]+">
+                </div>
+                <div class="form-group">
+                    <label for="server-directory">Document Root:</label>
+                    <input type="text" id="server-directory" placeholder="/path/to/your/php/project" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="cancel-server" class="btn-secondary">Cancel</button>
+                    <button type="submit" id="save-server" class="btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Confirmation</h2>
+            <p id="confirm-message">Are you sure you want to delete this server?</p>
+            <div class="form-actions">
+                <button type="button" id="cancel-confirm" class="btn-secondary">Cancel</button>
+                <button type="button" id="confirm-action" class="btn-danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        // DOM Elements
+        const serverList = document.getElementById('server-list');
+        const addServerBtn = document.getElementById('add-server-btn');
+        const serverModal = document.getElementById('server-modal');
+        const confirmModal = document.getElementById('confirm-modal');
+        const serverForm = document.getElementById('server-form');
+        const modalTitle = document.getElementById('modal-title');
+        const serverIdInput = document.getElementById('server-id');
+        const serverNameInput = document.getElementById('server-name');
+        const serverPortInput = document.getElementById('server-port');
+        const serverDirectoryInput = document.getElementById('server-directory');
+        const alertElement = document.getElementById('alert');
+        const confirmMessage = document.getElementById('confirm-message');
+        const confirmAction = document.getElementById('confirm-action');
+        // Modal close buttons
+        document.querySelectorAll('.close, #cancel-server, #cancel-confirm').forEach(element => {
+            element.addEventListener('click', () => {
+                serverModal.style.display = 'none';
+                confirmModal.style.display = 'none';
+            });
+        });
+        // API Base URL
+        const API_BASE = '/api';
+        // Show alert message
+        function showAlert(message, type) {
+            alertElement.textContent = message;
+            alertElement.className = 'alert alert-' + type;
+            alertElement.classList.remove('hidden');
+            setTimeout(() => {
+                alertElement.classList.add('hidden');
+            }, 3000);
+        }
+        // Load all servers
+        async function loadServers() {
+            try {
+                const response = await fetch(API_BASE + '/servers');
+                if (!response.ok) {
+                    throw new Error('Failed to load servers');
+                }
+                
+                const servers = await response.json();
+                
+                if (servers.length === 0) {
+                    serverList.innerHTML = '<div class="server-item">No servers configured. Click "Add Server" to create one.</div>';
+                    return;
+                }
+                
+                serverList.innerHTML = '';
+                servers.forEach(server => {
+                    const statusClass = server.running ? 'status-running' : 'status-stopped';
+                    const statusText = server.running ? 'Running' : 'Stopped';
+                    
+                    const serverItem = document.createElement('div');
+                    serverItem.className = 'server-item';
+                    serverItem.innerHTML = '<div>' +
+                        '<strong>' + server.name + '</strong>' +
+                        '<div>Port: ' + server.port + '</div>' +
+                        '<div>Directory: ' + server.directory + '</div>' +
+                        '<div>Status: <span class="server-status ' + statusClass + '">' + statusText + '</span></div>' +
+                        '</div>' +
+                        '<div class="btn-group">' +
+                        (!server.running ? '<button class="btn-success start-server" data-id="' + server.id + '">Start</button>' : '') +
+                        (server.running ? '<button class="btn-danger stop-server" data-id="' + server.id + '">Stop</button>' : '') +
+                        '<button class="btn-secondary edit-server" data-id="' + server.id + 
+                        '" data-name="' + server.name + 
+                        '" data-port="' + server.port + 
+                        '" data-directory="' + server.directory + '">Edit</button>' +
+                        '<button class="btn-danger delete-server" data-id="' + server.id + '">Delete</button>' +
+                        '</div>';
+                    serverList.appendChild(serverItem);
+                });
+                
+                // Add event listeners for server actions
+                document.querySelectorAll('.start-server').forEach(btn => {
+                    btn.addEventListener('click', startServer);
+                });
+                
+                document.querySelectorAll('.stop-server').forEach(btn => {
+                    btn.addEventListener('click', stopServer);
+                });
+                
+                document.querySelectorAll('.edit-server').forEach(btn => {
+                    btn.addEventListener('click', editServer);
+                });
+                
+                document.querySelectorAll('.delete-server').forEach(btn => {
+                    btn.addEventListener('click', showDeleteConfirmation);
+                });
+                
+            } catch (error) {
+                console.error('Error loading servers:', error);
+                serverList.innerHTML = '<div class="server-item">Error loading servers. Please try again.</div>';
+            }
+        }
+        // Show server modal for adding a server
+        addServerBtn.addEventListener('click', () => {
+            modalTitle.textContent = 'Add Server';
+            serverIdInput.value = '';
+            serverForm.reset();
+            serverModal.style.display = 'block';
+        });
+        // Handle server form submission
+        serverForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const id = serverIdInput.value;
+            const name = serverNameInput.value;
+            const port = serverPortInput.value;
+            const directory = serverDirectoryInput.value;
+            
+            const serverData = {
+                name,
+                port,
+                directory
+            };
+            
+            try {
+                let response;
+                
+                if (id) {
+                    // Update existing server
+                    response = await fetch(API_BASE + '/servers/' + id, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(serverData)
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to update server');
+                    }
+                    
+                    showAlert('Server updated successfully', 'success');
+                } else {
+                    // Create new server
+                    response = await fetch(API_BASE + '/servers', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(serverData)
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to create server');
+                    }
+                    
+                    showAlert('Server created successfully', 'success');
+                }
+                
+                serverModal.style.display = 'none';
+                loadServers();
+                
+            } catch (error) {
+                console.error('Error saving server:', error);
+                showAlert(error.message, 'danger');
+            }
+        });
+        // Edit server
+        function editServer(e) {
+            const button = e.target;
+            const id = button.getAttribute('data-id');
+            const name = button.getAttribute('data-name');
+            const port = button.getAttribute('data-port');
+            const directory = button.getAttribute('data-directory');
+            
+            modalTitle.textContent = 'Edit Server';
+            serverIdInput.value = id;
+            serverNameInput.value = name;
+            serverPortInput.value = port;
+            serverDirectoryInput.value = directory;
+            
+            serverModal.style.display = 'block';
+        }
+        // Show delete confirmation
+        function showDeleteConfirmation(e) {
+            const id = e.target.getAttribute('data-id');
+            confirmMessage.textContent = 'Are you sure you want to delete this server?';
+            confirmAction.setAttribute('data-id', id);
+            confirmAction.setAttribute('data-action', 'delete');
+            confirmModal.style.display = 'block';
+        }
+        // Handle confirmation action
+        confirmAction.addEventListener('click', async () => {
+            const id = confirmAction.getAttribute('data-id');
+            const action = confirmAction.getAttribute('data-action');
+            
+            try {
+                if (action === 'delete') {
+                    const response = await fetch(API_BASE + '/servers/' + id, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to delete server');
+                    }
+                    
+                    showAlert('Server deleted successfully', 'success');
+                }
+                
+                confirmModal.style.display = 'none';
+                loadServers();
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert(error.message, 'danger');
+            }
+        });
+        // Start server
+        async function startServer(e) {
+            const id = e.target.getAttribute('data-id');
+            
+            try {
+                const response = await fetch(API_BASE + '/servers/' + id + '/start', {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to start server');
+                }
+                
+                showAlert('Server started successfully', 'success');
+                loadServers();
+                
+            } catch (error) {
+                console.error('Error starting server:', error);
+                showAlert(error.message, 'danger');
+            }
+        }
+        // Stop server
+        async function stopServer(e) {
+            const id = e.target.getAttribute('data-id');
+            
+            try {
+                const response = await fetch(API_BASE + '/servers/' + id + '/stop', {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to stop server');
+                }
+                
+                showAlert('Server stopped successfully', 'success');
+                loadServers();
+                
+            } catch (error) {
+                console.error('Error stopping server:', error);
+                showAlert(error.message, 'danger');
+            }
+        }
+        
+        // Load initial servers on page load
+        window.addEventListener('load', loadServers);
+    </script>
+</body>
+</html>
